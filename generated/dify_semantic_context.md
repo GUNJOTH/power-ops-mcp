@@ -1,7 +1,7 @@
 # 火电运维统一语义上下文
 
 Ossie version: `0.2.0.dev0`
-Semantic fingerprint: `449be590e258b2df87db23262f7ef34e60d5175d64cb1fe978738f562a5e225f`
+Semantic fingerprint: `7b05ed245ec399678104c126c14356b126a7703d56b9fbc29db462aa4d0a1e25`
 
 ## 使用边界
 

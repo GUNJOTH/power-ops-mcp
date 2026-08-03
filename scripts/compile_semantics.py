@@ -49,7 +49,10 @@ def extension(model: dict, vendor: str) -> dict:
 
 
 def compile_model() -> tuple[str, str, str, str]:
-    raw = MODEL_PATH.read_bytes()
+    # Git may materialize text files with CRLF on Windows and LF on Linux.
+    # Normalize line endings before parsing and hashing so generated artifacts
+    # remain deterministic across developer workstations and CI runners.
+    raw = MODEL_PATH.read_bytes().replace(b"\r\n", b"\n")
     data = yaml.safe_load(raw)
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     jsonschema.Draft202012Validator(schema).validate(data)
