@@ -1,78 +1,73 @@
-# 火电运维问数 MCP
+# 火电缺陷智能分析 MCP
 
-该服务把生产工作流里的自由 SQL 查询替换为 8 个核心工具、2 个业务扩展工具和固定支持工具。Apache Ossie 模型是字段、维度、指标、状态和工具目录的唯一语义源；MCP 只消费经过验证的生成注册表。所有查询均为固定模板和参数化 SQL，不暴露 `sql`、`where_sql`、`order_by_sql` 等自由输入。
+本服务根据“火电-缺陷智能分析”Dify Chatflow 的查询口径编排，向 Dify 提供固定、参数化、只读的设备与缺陷查询工具。它不接受自由 SQL，不提交缺陷单或工单。
 
-## 团队协作入口
+## 新增的缺陷分析工具
 
-- [架构与变更边界](docs/ARCHITECTURE.md)：模块职责、不可违反的规则和变更路径。
-- [贡献规范](CONTRIBUTING.md)：分支、PR、生成产物、迁移与验证要求。
-- [安全策略](SECURITY.md)：凭据、运行日志和生产部署边界。
+1. `parse_kks_code`：灵活解析长短 KKS。
+2. `resolve_defect_equipment`：按完整 KKS 查询设备主数据。
+3. `get_current_equipment_defects`：当前设备/当前KKS范围全量统计、分页明细。
+4. `get_same_system_defects`：按 `system_kks` 查询同系统缺陷，排除当前主设备。
+5. `get_same_type_defects`：按 `system_class_code + equipment_class_code` 查询同类型缺陷，排除当前主设备。
+6. `get_defect_analysis_statistics`：一次返回当前设备、同系统、同类型的全量统计。
 
-## 工具
+原项目的设备、缺陷、工单和运维统计工具继续保留。
 
-核心工具：
+## 全量数据口径
 
-1. `search_equipment`
-2. `search_defects`
-3. `get_defect_detail`
-4. `summarize_defects`
-5. `search_workorders`
-6. `get_workorder_detail`
-7. `summarize_workorders`
-8. `analyze_workorder_failures`
+- 所有数量均使用 `sqldemo3.dwd_defect_dedup_physical` 的全部匹配记录统计。
+- 明细不做静默截断，采用 `page + page_size` 分页返回。
+- `page_size` 最大为 500。响应中的 `has_more` 和 `next_page` 表示是否还有后续数据。
+- 连续请求 `next_page` 可以取得全部明细，同时避免 Dify 变量超过 400000 字符或模型上下文溢出。
+- 物理表无可靠缺陷发生时间，因此明细只按 `defect_code` 稳定分页，不解释为时间顺序。
 
-扩展工具：`analyze_workorder_materials`、`get_equipment_operation_summary`。
+## 数据库要求
 
-此外提供 `get_maintenance_dashboard` 和 `get_service_status` 支持工具。前者负责能力导航、数据概况、数据时间边界和澄清消息；后者返回版本、语义指纹和可选数据库就绪状态。业务查询工具仍保持 8+2 的设计。
+运行账号至少需要以下对象的 `SELECT` 权限：
 
-## 本地虚拟环境
+- `dwd_defect_dedup_physical`
+- `mcp_defect_current`
+- `vw_qa_workorder_equipment_mcp`
+- 原项目 `generated/database_contract.json` 中列出的视图
+- `mcp_schema_version`
+
+推荐使用只读数据库账号。数据库密码和 MCP Token 只能放在 `.env`，不得写入代码或 Dify 提示词。
+
+## 本地启动
 
 ```powershell
+Copy-Item .env.example .env
+# 编辑 .env，配置数据库和认证信息
 uv sync --extra test
 uv run pytest
 uv run python app.py
 ```
 
-修改 `semantic/power_operations.ossie.yaml` 后必须重新编译：
+默认 Streamable HTTP 端点是：
 
-```powershell
-uv run python scripts/compile_semantics.py
-uv run python scripts/compile_semantics.py --check
+```text
+http://<MCP_HOST>:<MCP_PORT>/mcp
 ```
 
-不要直接编辑 `generated/` 下的文件。
+健康检查：
 
-本项目统一使用 `uv` 管理 `.venv` 和 `uv.lock`，不要直接运行 `pip install` 或 `python -m venv`。
+- `/health/live`
+- `/health/ready`
+- `/metrics`
 
-## 容器启动
+## Dify 推荐调用方式
 
-先按 [database/README.md](database/README.md) 部署版本化视图，再复制 `.env.example` 为 `.env`，填写只读 MySQL 账号和随机 MCP Token。该账号应只拥有 `mcp_schema_version` 及以下视图的 `SELECT` 权限：
-
-- `vw_qa_defect`
-- `vw_qa_defect_fact`
-- `vw_qa_work_order`
-- `vw_qa_work_order_fact`
-
-然后运行：
-
-```powershell
-docker compose -f compose.example.yml up --build
+```text
+用户Query
+  → 意图识别/动态分析策略
+  → parse_kks_code
+  → resolve_defect_equipment
+  → 根据策略选择以下一个或多个工具
+      get_current_equipment_defects
+      get_same_system_defects
+      get_same_type_defects
+  → 汇总统计及必要分页明细
+  → 大模型生成动态Markdown分析报告
 ```
 
-默认使用带 Bearer Token、Host/Origin 防护的 Streamable HTTP。Dify 中应配置 `<domain>_mcp_auth_token`，让意图识别节点输出 `tool_name + arguments`，不再输出 SQL。
-
-运行端点：
-
-- `/health/live`：进程存活。
-- `/health/ready`：数据库、Schema 版本及视图字段契约。
-- `/metrics`：Prometheus 文本指标。
-
-查询层使用有界连接池、并发信号量和 MySQL `MAX_EXECUTION_TIME`；容量耗尽时快速失败，不创建无限排队。
-
-## 数据边界
-
-- 缺陷按 `defect_code` 去重，且没有可靠时间字段。
-- 工单按 `workorder_code` 去重；只有计划开始、计划完成时间，没有实际完成时间。
-- “超期”仅指计划完成时间早于查询基准时间，且状态不是已关闭、已取消、已作废。
-- 单次明细或汇总返回上限为 50。
-- 日志只记录工具名、参数数量、耗时和返回条数，不记录密码或结果数据。
+如果用户只要求统计，优先调用 `get_defect_analysis_statistics`，不要读取全部明细。

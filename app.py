@@ -1,12 +1,14 @@
 """火电运维问数 MCP 服务。
 
 只暴露固定、参数化的只读查询，不接受 SQL、WHERE 或 ORDER BY 片段。
-数据口径与本仓库生成的 ``vw_qa_*`` 语义视图契约保持一致。
+数据口径与 ``火电运维问数驾驶舱_生产版_sqldemo3.yml`` 使用的
+``vw_qa_*`` 语义视图保持一致。
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from datetime import date, datetime, timezone
@@ -65,9 +67,9 @@ logging.basicConfig(
     level=SETTINGS.log_level,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-LOGGER = logging.getLogger("power-ops-mcp")
+LOGGER = logging.getLogger("power-defect-analysis-mcp")
 MCP = FastMCP(
-    "火电运维问数",
+    "火电缺陷智能分析",
     json_response=True,
     host=SETTINGS.mcp_host,
     port=SETTINGS.mcp_port,
@@ -90,6 +92,42 @@ MCP = FastMCP(
 POOL = ConnectionPool(SETTINGS)
 
 MAX_LIMIT = 50
+DEFECT_ANALYSIS_TABLE = "dwd_defect_dedup_physical"
+ANALYSIS_PAGE_MAX = 500
+ANALYSIS_FIELDS = (
+    "defect_code, defect_description, defect_type_name, defect_classification, "
+    "specialty_code, specialty_name, defect_type_desc, defect_status, kks_code, "
+    "location_name, kks_name, asset_code, equipment_name, unit_name, "
+    "maintenance_team_code, maintenance_team_name, acceptance_location, "
+    "treatment_result, acceptance_summary, work_summary, equipment_kks, "
+    "system_kks, system_class_code, equipment_class_code"
+)
+TOOL_CATALOG.update({
+    "parse_kks_code": {
+        "label": "KKS长短编码解析", "domains": ["defect"],
+        "intents": ["kks_parse"],
+    },
+    "resolve_defect_equipment": {
+        "label": "缺陷设备主数据匹配", "domains": ["defect"],
+        "intents": ["equipment_search"],
+    },
+    "get_current_equipment_defects": {
+        "label": "当前设备历史缺陷", "domains": ["defect"],
+        "intents": ["current_equipment_defect_analysis"],
+    },
+    "get_same_system_defects": {
+        "label": "同系统设备缺陷", "domains": ["defect"],
+        "intents": ["same_system_defect_analysis"],
+    },
+    "get_same_type_defects": {
+        "label": "同类型设备缺陷", "domains": ["defect"],
+        "intents": ["same_type_defect_analysis"],
+    },
+    "get_defect_analysis_statistics": {
+        "label": "缺陷分析三范围统计", "domains": ["defect"],
+        "intents": ["defect_analysis_statistics"],
+    },
+})
 DEFECT_VIEW = DATASETS["defect"]["source"]
 DEFECT_FAST_VIEW = FAST_SOURCES["defect"]
 WORKORDER_VIEW = DATASETS["workorder"]["source"]
@@ -109,6 +147,15 @@ VIEW_CONTRACTS = {
     },
     WORKORDER_EQUIPMENT_VIEW: {
         "LOCATION", "kks_name", "ASSETNUM", "equipment_name", "specialty_name",
+    },
+    DEFECT_ANALYSIS_TABLE: {
+        "defect_code", "defect_description", "defect_type_name",
+        "defect_classification", "specialty_code", "specialty_name",
+        "defect_type_desc", "defect_status", "kks_code", "location_name",
+        "kks_name", "asset_code", "equipment_name", "unit_name",
+        "maintenance_team_code", "maintenance_team_name", "acceptance_location",
+        "treatment_result", "acceptance_summary", "work_summary",
+        "equipment_kks", "system_kks", "system_class_code", "equipment_class_code",
     },
 }
 
@@ -869,6 +916,259 @@ def _readiness() -> tuple[bool, dict[str, Any]]:
     except Exception as exc:
         LOGGER.warning("readiness_failed error_type=%s", type(exc).__name__)
         return False, {"status": "not_ready", "reason": type(exc).__name__}
+
+
+def _parse_analysis_kks(kks_code: str) -> dict[str, Any]:
+    """Parse the flexible KKS levels used by the Dify defect-analysis workflow."""
+    code = re.sub(r"[\s._/]+", "", str(kks_code or "").strip().upper())
+    result: dict[str, Any] = {
+        "normalized_kks": code,
+        "valid": False,
+        "level": "UNKNOWN",
+        "system_kks": "",
+        "equipment_kks": "",
+        "system_class_code": "",
+        "equipment_class_code": "",
+        "current_scope_kks": "",
+    }
+    if not code or len(code) > 17 or not re.fullmatch(r"[A-Z0-9-]+", code):
+        return result
+    checks = (
+        (0, 1, r"[A-Z0-9]+"),
+        (1, 2, r"[0-9]+"),
+        (2, min(len(code), 5), r"[A-Z]+"),
+        (5, min(len(code), 7), r"[0-9]+"),
+        (7, min(len(code), 9), r"[A-Z]+"),
+        (9, min(len(code), 12), r"[0-9]+"),
+    )
+    for start, end, pattern in checks:
+        if len(code) > start and not re.fullmatch(pattern, code[start:end]):
+            return result
+    result["valid"] = True
+    result["system_class_code"] = code[2:min(5, len(code))] if len(code) > 2 else ""
+    result["system_kks"] = code[:7] if len(code) >= 7 else ""
+    result["equipment_class_code"] = code[7:min(9, len(code))] if len(code) > 7 else ""
+    result["equipment_kks"] = code[:12] if len(code) >= 12 else ""
+    result["current_scope_kks"] = result["equipment_kks"] or code
+    levels = {
+        1: "PLANT", 2: "PLANT_SYSTEM_PREFIX", 5: "SYSTEM_CLASS",
+        7: "SYSTEM", 9: "EQUIPMENT_CLASS", 12: "EQUIPMENT",
+        16: "COMPONENT", 17: "COMPONENT_WITH_ADDITIONAL",
+    }
+    result["level"] = levels.get(len(code), "PARTIAL")
+    return result
+
+
+def _analysis_page(page: int, page_size: int) -> tuple[int, int, int]:
+    try:
+        safe_page = max(1, int(page))
+        safe_size = max(1, min(int(page_size), ANALYSIS_PAGE_MAX))
+    except (TypeError, ValueError):
+        safe_page, safe_size = 1, 100
+    return safe_page, safe_size, (safe_page - 1) * safe_size
+
+
+def _analysis_query(
+    tool: str,
+    *,
+    scope_name: str,
+    where_sql: str,
+    params: list[Any],
+    page: int,
+    page_size: int,
+) -> dict[str, Any]:
+    safe_page, safe_size, offset = _analysis_page(page, page_size)
+    summary_sql = (
+        f"SELECT COUNT(*) AS total_defect_count, "
+        f"COUNT(DISTINCT kks_code) AS involved_kks_count "
+        f"FROM {DEFECT_ANALYSIS_TABLE} WHERE {where_sql}"
+    )
+    detail_sql = (
+        f"SELECT {ANALYSIS_FIELDS} FROM {DEFECT_ANALYSIS_TABLE} "
+        f"WHERE {where_sql} ORDER BY defect_code LIMIT %s OFFSET %s"
+    )
+    summary_rows = _execute(tool, summary_sql, params)
+    details = _execute(tool, detail_sql, [*params, safe_size, offset])
+    summary = summary_rows[0] if summary_rows else {
+        "total_defect_count": 0, "involved_kks_count": 0,
+    }
+    total = int(summary.get("total_defect_count") or 0)
+    return {
+        "contract_version": RESPONSE_CONTRACT_VERSION,
+        "service_version": SETTINGS.service_version,
+        "request_id": str(uuid.uuid4()),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "code": 0,
+        "message": "success",
+        "query_scope": {"scope": scope_name},
+        "summary": summary,
+        "data": details,
+        "pagination": {
+            "page": safe_page,
+            "page_size": safe_size,
+            "returned_count": len(details),
+            "total_count": total,
+            "has_more": offset + len(details) < total,
+            "next_page": safe_page + 1 if offset + len(details) < total else None,
+        },
+        "data_boundary": (
+            "统计覆盖全部匹配缺陷；明细采用分页返回。按next_page连续调用可取完全部数据。"
+        ),
+    }
+
+
+@MCP.tool()
+def parse_kks_code(kks_code: str) -> dict[str, Any]:
+    """解析长短KKS，返回当前范围、系统码以及同类型匹配所需分类码。"""
+    parsed = _parse_analysis_kks(kks_code)
+    if not parsed["valid"]:
+        return _clarification("KKS格式无法识别，请提供由字母、数字或连字符组成的有效位置编码。")
+    return _response(parsed, scope={"kks_code": parsed["normalized_kks"]})
+
+
+@MCP.tool()
+def resolve_defect_equipment(kks_code: str) -> dict[str, Any]:
+    """按KKS从资产、工单和工作票设备视图中解析设备主数据，不补造缺失字段。"""
+    parsed = _parse_analysis_kks(kks_code)
+    if not parsed["valid"]:
+        return _clarification("KKS格式无法识别。")
+    code = parsed["normalized_kks"]
+    sql = f"""
+    SELECT
+      MAX(source_rows.equipment_id) AS equipment_id,
+      MAX(source_rows.equipment_code) AS equipment_code,
+      source_rows.kks_code,
+      MAX(source_rows.equipment_name) AS equipment_name,
+      MAX(source_rows.location_name) AS location_name,
+      MAX(source_rows.specialty_name) AS specialty_name
+    FROM (
+      SELECT COALESCE(NULLIF(assetnum,''),NULLIF(LOCATION,'')) AS equipment_id,
+             COALESCE(assetnum,'') AS equipment_code, LOCATION AS kks_code,
+             COALESCE(equipment_name,location_name,'') AS equipment_name,
+             COALESCE(location_name,'') AS location_name,
+             COALESCE(specialty_name,'') AS specialty_name
+      FROM {DEFECT_EQUIPMENT_VIEW} WHERE UPPER(TRIM(LOCATION)) = %s
+      UNION ALL
+      SELECT LOCATION, COALESCE(ASSETNUM,''), LOCATION,
+             COALESCE(equipment_name,kks_name,''), COALESCE(kks_name,''),
+             COALESCE(specialty_name,'')
+      FROM {WORKORDER_EQUIPMENT_VIEW} WHERE UPPER(TRIM(LOCATION)) = %s
+    ) source_rows
+    GROUP BY source_rows.kks_code
+    LIMIT 5
+    """
+    rows = _execute("resolve_defect_equipment", sql, [code, code])
+    return _response(
+        rows,
+        scope={"kks_code": code, "match_method": "exact_kks"},
+        summary={"matched": bool(rows), "match_count": len(rows)},
+        deduplicate_key="kks_code",
+    )
+
+
+@MCP.tool()
+def get_current_equipment_defects(
+    kks_code: str, page: int = 1, page_size: int = 100,
+) -> dict[str, Any]:
+    """统计当前设备全部历史缺陷，并分页返回全部明细；支持短KKS前缀。"""
+    parsed = _parse_analysis_kks(kks_code)
+    if not parsed["valid"]:
+        return _clarification("KKS格式无法识别。")
+    if parsed["equipment_kks"]:
+        where_sql, params = "equipment_kks = %s", [parsed["equipment_kks"]]
+    else:
+        where_sql, params = "kks_code LIKE %s", [parsed["current_scope_kks"] + "%"]
+    result = _analysis_query(
+        "get_current_equipment_defects", scope_name="CURRENT_EQUIPMENT",
+        where_sql=where_sql, params=params, page=page, page_size=page_size,
+    )
+    result["query_scope"].update(parsed)
+    return result
+
+
+@MCP.tool()
+def get_same_system_defects(
+    kks_code: str, page: int = 1, page_size: int = 100,
+) -> dict[str, Any]:
+    """按system_kks查询同一具体系统的全部缺陷，排除当前主设备，明细分页返回。"""
+    parsed = _parse_analysis_kks(kks_code)
+    if not parsed["valid"] or not parsed["system_kks"]:
+        return _clarification("至少需要7位KKS，才能识别同一具体系统。")
+    where_sql = "system_kks = %s"
+    params: list[Any] = [parsed["system_kks"]]
+    if parsed["equipment_kks"]:
+        where_sql += " AND equipment_kks <> %s"
+        params.append(parsed["equipment_kks"])
+    result = _analysis_query(
+        "get_same_system_defects", scope_name="SAME_SYSTEM",
+        where_sql=where_sql, params=params, page=page, page_size=page_size,
+    )
+    result["query_scope"].update(parsed)
+    return result
+
+
+@MCP.tool()
+def get_same_type_defects(
+    kks_code: str, page: int = 1, page_size: int = 100,
+) -> dict[str, Any]:
+    """按系统分类码和设备分类码查询同类型设备全部缺陷，排除当前主设备，明细分页返回。"""
+    parsed = _parse_analysis_kks(kks_code)
+    if (
+        not parsed["valid"]
+        or len(parsed["system_class_code"]) != 3
+        or len(parsed["equipment_class_code"]) != 2
+    ):
+        return _clarification("至少需要9位KKS，才能识别完整系统分类码和设备分类码。")
+    where_sql = "system_class_code = %s AND equipment_class_code = %s"
+    params: list[Any] = [parsed["system_class_code"], parsed["equipment_class_code"]]
+    if parsed["equipment_kks"]:
+        where_sql += " AND equipment_kks <> %s"
+        params.append(parsed["equipment_kks"])
+    result = _analysis_query(
+        "get_same_type_defects", scope_name="SAME_TYPE",
+        where_sql=where_sql, params=params, page=page, page_size=page_size,
+    )
+    result["query_scope"].update(parsed)
+    return result
+
+
+@MCP.tool()
+def get_defect_analysis_statistics(kks_code: str) -> dict[str, Any]:
+    """一次返回当前设备、同系统、同类型三个范围的全量统计，不返回大体量明细。"""
+    parsed = _parse_analysis_kks(kks_code)
+    if not parsed["valid"]:
+        return _clarification("KKS格式无法识别。")
+    scopes: list[tuple[str, str, list[Any]]] = []
+    if parsed["equipment_kks"]:
+        scopes.append(("current_equipment", "equipment_kks = %s", [parsed["equipment_kks"]]))
+    else:
+        scopes.append(("current_scope", "kks_code LIKE %s", [parsed["current_scope_kks"] + "%"]))
+    if parsed["system_kks"]:
+        sql, values = "system_kks = %s", [parsed["system_kks"]]
+        if parsed["equipment_kks"]:
+            sql += " AND equipment_kks <> %s"
+            values.append(parsed["equipment_kks"])
+        scopes.append(("same_system", sql, values))
+    if len(parsed["system_class_code"]) == 3 and len(parsed["equipment_class_code"]) == 2:
+        sql = "system_class_code = %s AND equipment_class_code = %s"
+        values = [parsed["system_class_code"], parsed["equipment_class_code"]]
+        if parsed["equipment_kks"]:
+            sql += " AND equipment_kks <> %s"
+            values.append(parsed["equipment_kks"])
+        scopes.append(("same_type", sql, values))
+    statistics: dict[str, Any] = {}
+    for name, where_sql, params in scopes:
+        rows = _execute(
+            "get_defect_analysis_statistics",
+            f"SELECT COUNT(*) AS total_defect_count, "
+            f"COUNT(DISTINCT kks_code) AS involved_kks_count "
+            f"FROM {DEFECT_ANALYSIS_TABLE} WHERE {where_sql}",
+            params,
+        )
+        statistics[name] = rows[0] if rows else {
+            "total_defect_count": 0, "involved_kks_count": 0,
+        }
+    return _response(statistics, scope=parsed, data_boundary="全部匹配记录的精确统计")
 
 
 @MCP.custom_route("/health/live", methods=["GET"], include_in_schema=False)

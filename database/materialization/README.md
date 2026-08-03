@@ -38,10 +38,10 @@ full rebuild plus atomic swap is the safe method.
 
 ## Operations
 
-Run from the repository root with the workspace-managed uv environment:
+Run from `mcp_server` with the workspace-managed uv environment:
 
 ```powershell
-$env:UV_CACHE_DIR='.\.uv-cache'
+$env:UV_CACHE_DIR='..\.uv-cache'
 D:\uv\bin\uv.exe run python scripts\refresh_defect_snapshot.py --status
 D:\uv\bin\uv.exe run python scripts\refresh_defect_snapshot.py --confirm
 ```
