@@ -1,0 +1,10 @@
+.env
+.venv
+.uv-cache
+__pycache__
+.pytest_cache
+tests
+semantic
+scripts
+database
+*.pyc

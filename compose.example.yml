@@ -1,0 +1,24 @@
+services:
+  power-ops-mcp:
+    platform: linux/amd64
+    build: .
+    env_file: ${MCP_ENV_FILE:-.env}
+    ports:
+      - "8000:8000"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M

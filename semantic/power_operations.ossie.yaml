@@ -1,0 +1,258 @@
+version: 0.2.0.dev0
+semantic_model:
+  - name: fire_power_operations
+    description: 火电运维缺陷与工单统一语义模型。生产查询以去重后的 sqldemo3 语义视图为物理实现。
+    ai_context:
+      instructions: >-
+        缺陷按 TICKETID 去重，工单按 wonum 去重。缺陷没有可靠时间字段，
+        不得回答缺陷趋势、超期或处理时长。工单只有计划开始和计划完成时间，没有实际完成时间；
+        "超期"只能表示计划完成时间已过且工单尚未关闭，不得描述为实际处理超期或实际工期。
+      synonyms:
+        - 火电运维问数
+        - 缺陷问数
+        - 工单问数
+      examples:
+        - 哪个消缺班组的未关闭缺陷最多？
+        - 哪些检修班组的计划超期工单压力最高？
+        - Y0QEA01AN001 有哪些缺陷和工单？
+    datasets:
+      - name: defect
+        source: sqldemo3.mcp_defect_current
+        primary_key: [TICKETID]
+        description: 按缺陷编号去重后的缺陷业务数据集。
+        ai_context:
+          instructions: 缺陷源数据无可靠时间字段，只能做当前明细和非时间维度汇总。
+        fields:
+          - name: TICKETID
+            expression: {dialects: [{dialect: ANSI_SQL, expression: TICKETID}]}
+            datatype: String
+            label: 缺陷编号
+            description: 缺陷业务唯一标识。
+          - name: DESCRIPTION
+            expression: {dialects: [{dialect: ANSI_SQL, expression: DESCRIPTION}]}
+            datatype: String
+            label: 缺陷描述
+          - name: S_QXLB
+            expression: {dialects: [{dialect: ANSI_SQL, expression: S_QXLB}]}
+            datatype: String
+            dimension: {}
+            label: 缺陷类别
+          - name: S_CLASSIFICATION
+            expression: {dialects: [{dialect: ANSI_SQL, expression: S_CLASSIFICATION}]}
+            datatype: String
+            dimension: {}
+            label: 缺陷分类
+          - name: status
+            expression: {dialects: [{dialect: ANSI_SQL, expression: status}]}
+            datatype: String
+            dimension: {}
+            label: 缺陷状态
+          - name: specialty_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: specialty_name}]}
+            datatype: String
+            dimension: {}
+            label: 专业
+          - name: C_JZH
+            expression: {dialects: [{dialect: ANSI_SQL, expression: C_JZH}]}
+            datatype: String
+            dimension: {}
+            label: 机组
+          - name: LOCATION
+            expression: {dialects: [{dialect: ANSI_SQL, expression: LOCATION}]}
+            datatype: String
+            dimension: {}
+            label: KKS编码
+          - name: location_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: location_name}]}
+            datatype: String
+            dimension: {}
+            label: KKS位置
+          - name: assetnum
+            expression: {dialects: [{dialect: ANSI_SQL, expression: assetnum}]}
+            datatype: String
+            dimension: {}
+            label: 资产编码
+          - name: equipment_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: equipment_name}]}
+            datatype: String
+            dimension: {}
+            label: 设备名称
+          - name: TEAMNAME
+            expression: {dialects: [{dialect: ANSI_SQL, expression: TEAMNAME}]}
+            datatype: String
+            dimension: {}
+            label: 消缺班组
+          - name: S_FINISHREPORT
+            expression: {dialects: [{dialect: ANSI_SQL, expression: S_FINISHREPORT}]}
+            datatype: String
+            label: 消缺情况
+          - name: S_YXYS
+            expression: {dialects: [{dialect: ANSI_SQL, expression: S_YXYS}]}
+            datatype: String
+            label: 运行验收总结
+          - name: S_GZZJ
+            expression: {dialects: [{dialect: ANSI_SQL, expression: S_GZZJ}]}
+            datatype: String
+            label: 工作总结
+      - name: workorder
+        source: sqldemo3.vw_qa_work_order_mcp
+        primary_key: [wonum]
+        description: 按工单号去重后的工单业务数据集。
+        ai_context:
+          instructions: 只有计划时间，没有实际完成时间。计划超期不等于实际处理超期。
+        fields:
+          - name: wonum
+            expression: {dialects: [{dialect: ANSI_SQL, expression: wonum}]}
+            datatype: String
+            label: 工单号
+          - name: SCHEDSTART
+            expression: {dialects: [{dialect: ANSI_SQL, expression: SCHEDSTART}]}
+            datatype: DateTime
+            dimension: {is_time: true}
+            label: 计划开始时间
+          - name: SCHEDFINISH
+            expression: {dialects: [{dialect: ANSI_SQL, expression: SCHEDFINISH}]}
+            datatype: DateTime
+            dimension: {is_time: true}
+            label: 计划完成时间
+          - name: status
+            expression: {dialects: [{dialect: ANSI_SQL, expression: status}]}
+            datatype: String
+            dimension: {}
+            label: 工单状态
+          - name: DESCRIPTION
+            expression: {dialects: [{dialect: ANSI_SQL, expression: DESCRIPTION}]}
+            datatype: String
+            label: 工单描述
+          - name: specialty_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: specialty_name}]}
+            datatype: String
+            dimension: {}
+            label: 专业
+          - name: maintenance_team_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: maintenance_team_name}]}
+            datatype: String
+            dimension: {}
+            label: 检修班组
+          - name: LOCATION
+            expression: {dialects: [{dialect: ANSI_SQL, expression: LOCATION}]}
+            datatype: String
+            dimension: {}
+            label: KKS编码
+          - name: kks_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: kks_name}]}
+            datatype: String
+            dimension: {}
+            label: KKS位置
+          - name: ASSETNUM
+            expression: {dialects: [{dialect: ANSI_SQL, expression: ASSETNUM}]}
+            datatype: String
+            dimension: {}
+            label: 资产编码
+          - name: equipment_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: equipment_name}]}
+            datatype: String
+            dimension: {}
+            label: 设备名称
+          - name: failure_category_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: failure_category_name}]}
+            datatype: String
+            dimension: {}
+            label: 故障类别
+          - name: failure_problem_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: failure_problem_name}]}
+            datatype: String
+            dimension: {}
+            label: 故障问题
+          - name: failure_cause_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: failure_cause_name}]}
+            datatype: String
+            dimension: {}
+            label: 故障原因
+          - name: remedy_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: remedy_name}]}
+            datatype: String
+            dimension: {}
+            label: 补救措施
+          - name: itemnum
+            expression: {dialects: [{dialect: ANSI_SQL, expression: itemnum}]}
+            datatype: String
+            dimension: {}
+            label: 物料编码
+          - name: material_name
+            expression: {dialects: [{dialect: ANSI_SQL, expression: material_name}]}
+            datatype: String
+            dimension: {}
+            label: 物料名称
+          - name: work_ticket_code
+            expression: {dialects: [{dialect: ANSI_SQL, expression: work_ticket_code}]}
+            datatype: String
+            dimension: {}
+            label: 工作票编号
+          - name: work_ticket_status
+            expression: {dialects: [{dialect: ANSI_SQL, expression: work_ticket_status}]}
+            datatype: String
+            dimension: {}
+            label: 工作票状态
+    metrics:
+      - name: defect_count
+        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT TICKETID)}]}
+        datatype: Integer
+        description: 按缺陷编号去重的缺陷总数。
+      - name: open_defect_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT CASE WHEN COALESCE(status, '') NOT IN ('已关闭', '已取消', '已作废') THEN TICKETID END)
+        datatype: Integer
+        description: 状态不是已关闭、已取消、已作废的缺陷数。
+      - name: closed_defect_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT CASE WHEN status = '已关闭' THEN TICKETID END)
+        datatype: Integer
+        description: 状态为已关闭的缺陷数。
+      - name: workorder_count
+        expression: {dialects: [{dialect: ANSI_SQL, expression: COUNT(DISTINCT wonum)}]}
+        datatype: Integer
+        description: 按工单号去重的工单总数。
+      - name: closed_workorder_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT CASE WHEN status = '已关闭' THEN wonum END)
+        datatype: Integer
+        description: 状态为已关闭的工单数。
+      - name: open_workorder_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT CASE WHEN COALESCE(status, '') NOT IN ('已关闭', '已取消', '已作废') THEN wonum END)
+        datatype: Integer
+        description: 状态不是已关闭、已取消、已作废的工单数。
+      - name: overdue_workorder_count
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT CASE WHEN COALESCE(status, '') NOT IN ('已关闭', '已取消', '已作废') AND SCHEDFINISH < CURRENT_TIMESTAMP THEN wonum END)
+        datatype: Integer
+        description: 计划完成时间早于当前时间且尚未关闭的工单数。
+        ai_context:
+          instructions: 只能称为计划超期未关闭工单，不得称为实际处理超期。
+      - name: workorder_closure_rate
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: 100.0 * COUNT(DISTINCT CASE WHEN status = '已关闭' THEN wonum END) / NULLIF(COUNT(DISTINCT wonum), 0)
+        datatype: Decimal
+        description: 已关闭工单数除以工单总数的代理关闭率。
+        ai_context:
+          instructions: 这是关闭率代理口径，不是按期完成率。
+    custom_extensions:
+      - vendor_name: TONGHAI_POWER_OPS
+        data: >-
+          {"schema_version":"2026.08.03.1","closed_statuses":["已关闭","已取消","已作废"],"fast_sources":{"defect":"mcp_defect_current","workorder":"vw_qa_work_order_mcp_fact"},"equipment_sources":{"defect":"mcp_defect_current","workorder":"vw_qa_workorder_equipment_mcp"},"dimensions":{"defect":{"type":"S_QXLB","status":"status","specialty":"specialty_name","team":"TEAMNAME","unit":"C_JZH","classification":"S_CLASSIFICATION","kks":"LOCATION"},"workorder":{"status":"status","specialty":"specialty_name","team":"maintenance_team_name","month":"SCHEDSTART","ticket_linkage":"work_ticket_code","monthly_closure":"SCHEDSTART"},"failure":{"category":"failure_category_name","problem":"failure_problem_name","cause":"failure_cause_name","remedy":"remedy_name"}},"data_boundaries":{"defect":"缺陷源数据没有可靠时间字段，不支持趋势、超期或处理时长分析","workorder":"工单只有计划开始和计划完成时间，没有实际完成时间；超期仅按计划完成时间判断"}}
+      - vendor_name: TONGHAI_MCP
+        data: >-
+          {"tools":{"search_equipment":{"label":"设备定位","domains":["defect","workorder"],"intents":["equipment_search"]},"search_defects":{"label":"缺陷列表","domains":["defect"],"intents":["equipment_defect_history","open_defect_list"]},"get_defect_detail":{"label":"缺陷明细","domains":["defect"],"intents":["defect_detail"]},"summarize_defects":{"label":"缺陷汇总","domains":["defect"],"intents":["defect_type_distribution","defect_status_distribution","defect_specialty_summary","defect_team_summary","defect_unit_summary","defect_classification_summary","defect_kks_ranking"]},"search_workorders":{"label":"工单列表","domains":["workorder"],"intents":["equipment_work_history","overdue_workorder_list"]},"get_workorder_detail":{"label":"工单明细","domains":["workorder"],"intents":["workorder_detail"]},"summarize_workorders":{"label":"工单汇总","domains":["workorder"],"intents":["monthly_workorder_closure_rate","workorder_status_distribution","workorder_trend","workorder_specialty_summary","workorder_team_summary"]},"analyze_workorder_failures":{"label":"工单故障分析","domains":["workorder"],"intents":["workorder_failure_summary"]},"analyze_workorder_materials":{"label":"工单物料分析","domains":["workorder"],"intents":["workorder_material_summary"]},"get_equipment_operation_summary":{"label":"设备运维总览","domains":["defect","workorder"],"intents":["equipment_operations_summary"]},"get_maintenance_dashboard":{"label":"问数能力与数据概况","domains":["defect","workorder"],"intents":["query_navigation","defect_data_overview","workorder_data_overview","data_freshness"]},"get_service_status":{"label":"服务状态","domains":["support"],"intents":["service_status"]}}}

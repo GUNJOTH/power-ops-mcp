@@ -1,0 +1,22 @@
+[project]
+name = "power-ops-mcp"
+version = "0.1.0"
+description = "火电运维问数固定只读 MCP 工具"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.12,<2",
+  "PyMySQL>=1.1,<2",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<9",
+  "PyYAML>=6,<7",
+  "jsonschema>=4.26,<5",
+  "sqlglot>=27,<28",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p no:cacheprovider"

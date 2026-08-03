@@ -1,0 +1,61 @@
+{
+  "schema_version": "2026.08.03.1",
+  "views": {
+    "mcp_defect_current": [
+      "asset_code",
+      "equipment_name",
+      "kks_code",
+      "location_name",
+      "specialty_name"
+    ],
+    "vw_qa_work_order_mcp": [
+      "ASSETNUM",
+      "DESCRIPTION",
+      "LOCATION",
+      "SCHEDFINISH",
+      "SCHEDSTART",
+      "equipment_name",
+      "failure_category_name",
+      "failure_cause_name",
+      "failure_problem_name",
+      "itemnum",
+      "kks_name",
+      "maintenance_team_name",
+      "material_name",
+      "remedy_name",
+      "specialty_name",
+      "status",
+      "wonum",
+      "work_ticket_code",
+      "work_ticket_status"
+    ],
+    "vw_qa_work_order_mcp_fact": [
+      "ASSETNUM",
+      "DESCRIPTION",
+      "LOCATION",
+      "SCHEDFINISH",
+      "SCHEDSTART",
+      "equipment_name",
+      "failure_category_name",
+      "failure_cause_name",
+      "failure_problem_name",
+      "itemnum",
+      "kks_name",
+      "maintenance_team_name",
+      "material_name",
+      "remedy_name",
+      "specialty_name",
+      "status",
+      "wonum",
+      "work_ticket_code",
+      "work_ticket_status"
+    ],
+    "vw_qa_workorder_equipment_mcp": [
+      "asset_code",
+      "equipment_name",
+      "kks_code",
+      "kks_name",
+      "specialty_name"
+    ]
+  }
+}

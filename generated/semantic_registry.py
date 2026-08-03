@@ -1,0 +1,183 @@
+"""Generated from semantic/power_operations.ossie.yaml; do not edit."""
+
+OSSIE_VERSION = '0.2.0.dev0'
+
+SEMANTIC_FINGERPRINT = '449be590e258b2df87db23262f7ef34e60d5175d64cb1fe978738f562a5e225f'
+
+MODEL_NAME = 'fire_power_operations'
+
+MODEL_AI_CONTEXT = {'examples': ['哪个消缺班组的未关闭缺陷最多？', '哪些检修班组的计划超期工单压力最高？', 'Y0QEA01AN001 有哪些缺陷和工单？'],
+ 'instructions': '缺陷按 TICKETID 去重，工单按 wonum 去重。缺陷没有可靠时间字段， 不得回答缺陷趋势、超期或处理时长。工单只有计划开始和计划完成时间，没有实际完成时间； '
+                 '"超期"只能表示计划完成时间已过且工单尚未关闭，不得描述为实际处理超期或实际工期。',
+ 'synonyms': ['火电运维问数', '缺陷问数', '工单问数']}
+
+DATASETS = {'defect': {'ai_context': {'instructions': '缺陷源数据无可靠时间字段，只能做当前明细和非时间维度汇总。'},
+            'description': '按缺陷编号去重后的缺陷业务数据集。',
+            'fields': {'C_JZH': 'C_JZH',
+                       'DESCRIPTION': 'DESCRIPTION',
+                       'LOCATION': 'LOCATION',
+                       'S_CLASSIFICATION': 'S_CLASSIFICATION',
+                       'S_FINISHREPORT': 'S_FINISHREPORT',
+                       'S_GZZJ': 'S_GZZJ',
+                       'S_QXLB': 'S_QXLB',
+                       'S_YXYS': 'S_YXYS',
+                       'TEAMNAME': 'TEAMNAME',
+                       'TICKETID': 'TICKETID',
+                       'assetnum': 'assetnum',
+                       'equipment_name': 'equipment_name',
+                       'location_name': 'location_name',
+                       'specialty_name': 'specialty_name',
+                       'status': 'status'},
+            'primary_key': ['TICKETID'],
+            'qualified_source': 'sqldemo3.mcp_defect_current',
+            'source': 'mcp_defect_current'},
+ 'workorder': {'ai_context': {'instructions': '只有计划时间，没有实际完成时间。计划超期不等于实际处理超期。'},
+               'description': '按工单号去重后的工单业务数据集。',
+               'fields': {'ASSETNUM': 'ASSETNUM',
+                          'DESCRIPTION': 'DESCRIPTION',
+                          'LOCATION': 'LOCATION',
+                          'SCHEDFINISH': 'SCHEDFINISH',
+                          'SCHEDSTART': 'SCHEDSTART',
+                          'equipment_name': 'equipment_name',
+                          'failure_category_name': 'failure_category_name',
+                          'failure_cause_name': 'failure_cause_name',
+                          'failure_problem_name': 'failure_problem_name',
+                          'itemnum': 'itemnum',
+                          'kks_name': 'kks_name',
+                          'maintenance_team_name': 'maintenance_team_name',
+                          'material_name': 'material_name',
+                          'remedy_name': 'remedy_name',
+                          'specialty_name': 'specialty_name',
+                          'status': 'status',
+                          'wonum': 'wonum',
+                          'work_ticket_code': 'work_ticket_code',
+                          'work_ticket_status': 'work_ticket_status'},
+               'primary_key': ['wonum'],
+               'qualified_source': 'sqldemo3.vw_qa_work_order_mcp',
+               'source': 'vw_qa_work_order_mcp'}}
+
+METRICS = {'closed_defect_count': {'ai_context': {},
+                         'description': '状态为已关闭的缺陷数。',
+                         'expression': "COUNT(DISTINCT CASE WHEN status = '已关闭' THEN TICKETID END)"},
+ 'closed_workorder_count': {'ai_context': {},
+                            'description': '状态为已关闭的工单数。',
+                            'expression': "COUNT(DISTINCT CASE WHEN status = '已关闭' THEN wonum END)"},
+ 'defect_count': {'ai_context': {}, 'description': '按缺陷编号去重的缺陷总数。', 'expression': 'COUNT(DISTINCT TICKETID)'},
+ 'open_defect_count': {'ai_context': {},
+                       'description': '状态不是已关闭、已取消、已作废的缺陷数。',
+                       'expression': "COUNT(DISTINCT CASE WHEN COALESCE(status, '') NOT IN ('已关闭', '已取消', "
+                                     "'已作废') THEN TICKETID END)"},
+ 'open_workorder_count': {'ai_context': {},
+                          'description': '状态不是已关闭、已取消、已作废的工单数。',
+                          'expression': "COUNT(DISTINCT CASE WHEN COALESCE(status, '') NOT IN ('已关闭', '已取消', "
+                                        "'已作废') THEN wonum END)"},
+ 'overdue_workorder_count': {'ai_context': {'instructions': '只能称为计划超期未关闭工单，不得称为实际处理超期。'},
+                             'description': '计划完成时间早于当前时间且尚未关闭的工单数。',
+                             'expression': "COUNT(DISTINCT CASE WHEN COALESCE(status, '') NOT IN ('已关闭', "
+                                           "'已取消', '已作废') AND SCHEDFINISH < CURRENT_TIMESTAMP THEN wonum "
+                                           'END)'},
+ 'workorder_closure_rate': {'ai_context': {'instructions': '这是关闭率代理口径，不是按期完成率。'},
+                            'description': '已关闭工单数除以工单总数的代理关闭率。',
+                            'expression': "100.0 * COUNT(DISTINCT CASE WHEN status = '已关闭' THEN wonum END) / "
+                                          'NULLIF(COUNT(DISTINCT wonum), 0)'},
+ 'workorder_count': {'ai_context': {}, 'description': '按工单号去重的工单总数。', 'expression': 'COUNT(DISTINCT wonum)'}}
+
+CLOSED_STATUSES = ('已关闭', '已取消', '已作废')
+
+FAST_SOURCES = {'defect': 'mcp_defect_current', 'workorder': 'vw_qa_work_order_mcp_fact'}
+
+EQUIPMENT_SOURCES = {'defect': 'mcp_defect_current', 'workorder': 'vw_qa_workorder_equipment_mcp'}
+
+DIMENSIONS = {'defect': {'classification': 'S_CLASSIFICATION',
+            'kks': 'LOCATION',
+            'specialty': 'specialty_name',
+            'status': 'status',
+            'team': 'TEAMNAME',
+            'type': 'S_QXLB',
+            'unit': 'C_JZH'},
+ 'failure': {'category': 'failure_category_name',
+             'cause': 'failure_cause_name',
+             'problem': 'failure_problem_name',
+             'remedy': 'remedy_name'},
+ 'workorder': {'month': 'SCHEDSTART',
+               'monthly_closure': 'SCHEDSTART',
+               'specialty': 'specialty_name',
+               'status': 'status',
+               'team': 'maintenance_team_name',
+               'ticket_linkage': 'work_ticket_code'}}
+
+DATA_BOUNDARIES = {'defect': '缺陷源数据没有可靠时间字段，不支持趋势、超期或处理时长分析', 'workorder': '工单只有计划开始和计划完成时间，没有实际完成时间；超期仅按计划完成时间判断'}
+
+DATABASE_SCHEMA_VERSION = '2026.08.03.1'
+
+FIELD_LABELS = {'ASSETNUM': '资产编码',
+ 'C_JZH': '机组',
+ 'DESCRIPTION': '工单描述',
+ 'LOCATION': 'KKS编码',
+ 'SCHEDFINISH': '计划完成时间',
+ 'SCHEDSTART': '计划开始时间',
+ 'S_CLASSIFICATION': '缺陷分类',
+ 'S_FINISHREPORT': '消缺情况',
+ 'S_GZZJ': '工作总结',
+ 'S_QXLB': '缺陷类别',
+ 'S_YXYS': '运行验收总结',
+ 'TEAMNAME': '消缺班组',
+ 'TICKETID': '缺陷编号',
+ 'assetnum': '资产编码',
+ 'equipment_name': '设备名称',
+ 'failure_category_name': '故障类别',
+ 'failure_cause_name': '故障原因',
+ 'failure_problem_name': '故障问题',
+ 'itemnum': '物料编码',
+ 'kks_name': 'KKS位置',
+ 'location_name': 'KKS位置',
+ 'maintenance_team_name': '检修班组',
+ 'material_name': '物料名称',
+ 'remedy_name': '补救措施',
+ 'specialty_name': '专业',
+ 'status': '工单状态',
+ 'wonum': '工单号',
+ 'work_ticket_code': '工作票编号',
+ 'work_ticket_status': '工作票状态'}
+
+TOOL_CATALOG = {'analyze_workorder_failures': {'domains': ['workorder'],
+                                'intents': ['workorder_failure_summary'],
+                                'label': '工单故障分析'},
+ 'analyze_workorder_materials': {'domains': ['workorder'],
+                                 'intents': ['workorder_material_summary'],
+                                 'label': '工单物料分析'},
+ 'get_defect_detail': {'domains': ['defect'], 'intents': ['defect_detail'], 'label': '缺陷明细'},
+ 'get_equipment_operation_summary': {'domains': ['defect', 'workorder'],
+                                     'intents': ['equipment_operations_summary'],
+                                     'label': '设备运维总览'},
+ 'get_maintenance_dashboard': {'domains': ['defect', 'workorder'],
+                               'intents': ['query_navigation',
+                                           'defect_data_overview',
+                                           'workorder_data_overview',
+                                           'data_freshness'],
+                               'label': '问数能力与数据概况'},
+ 'get_service_status': {'domains': ['support'], 'intents': ['service_status'], 'label': '服务状态'},
+ 'get_workorder_detail': {'domains': ['workorder'], 'intents': ['workorder_detail'], 'label': '工单明细'},
+ 'search_defects': {'domains': ['defect'],
+                    'intents': ['equipment_defect_history', 'open_defect_list'],
+                    'label': '缺陷列表'},
+ 'search_equipment': {'domains': ['defect', 'workorder'], 'intents': ['equipment_search'], 'label': '设备定位'},
+ 'search_workorders': {'domains': ['workorder'],
+                       'intents': ['equipment_work_history', 'overdue_workorder_list'],
+                       'label': '工单列表'},
+ 'summarize_defects': {'domains': ['defect'],
+                       'intents': ['defect_type_distribution',
+                                   'defect_status_distribution',
+                                   'defect_specialty_summary',
+                                   'defect_team_summary',
+                                   'defect_unit_summary',
+                                   'defect_classification_summary',
+                                   'defect_kks_ranking'],
+                       'label': '缺陷汇总'},
+ 'summarize_workorders': {'domains': ['workorder'],
+                          'intents': ['monthly_workorder_closure_rate',
+                                      'workorder_status_distribution',
+                                      'workorder_trend',
+                                      'workorder_specialty_summary',
+                                      'workorder_team_summary'],
+                          'label': '工单汇总'}}
