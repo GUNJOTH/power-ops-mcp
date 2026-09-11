@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "火电运维问数固定只读 MCP 工具"
 requires-python = ">=3.11"
 dependencies = [
-  "mcp>=1.12,<2",
+  "mcp>=1.12,<3",
   "PyMySQL>=1.1,<2",
 ]
 
