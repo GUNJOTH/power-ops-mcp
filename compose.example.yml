@@ -1,5 +1,5 @@
 services:
-  power-ops-mcp:
+  power-defect-analysis-mcp:
     platform: linux/amd64
     build: .
     env_file: ${MCP_ENV_FILE:-.env}
